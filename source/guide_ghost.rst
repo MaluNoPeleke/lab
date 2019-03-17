@@ -1,4 +1,4 @@
-.. author:: nichtmax <https://moritz.in>
+.. author:: nichtmax <https://moritz.in> & updated by Peleke <https://www.peleke.de>
 .. highlight:: console
 
 .. sidebar:: Logo
@@ -18,21 +18,24 @@ The concept of the Ghost platform was first floated publicly in November 2012 in
 
 .. note:: For this guide you should be familiar with the basic concepts of
 
-  * Node.js_ and its package manager npm_
-  * MySQL_
-  * supervisord_
-  * domains_
+  * :manual:`Node.js <lang-nodejs>` and its package manager :manual_anchor:`npm <lang-nodejs.html#npm>`
+  * :manual:`MySQL <database-mysql>`
+  * :manual:`supervisord <daemons-supervisord>`
+  * :manual:`domains <web-domains>`
+  * :manual:`web backends <web-backends>`
 
 Prerequisites
 =============
 
-We're using Node.js_ in the stable version 8:
+We're using :manual:`Node.js <lang-nodejs>` in the stable version 10:
 
 ::
 
- [isabell@stardust ~]$ uberspace tools version show node
- Using 'Node.js' version: '8'
- [isabell@stardust ~]$
+ [isabell@stardust ~]$ uberspace tools version use node 10
+ Using 'Node.js' version: '10'
+ Selected node version 10
+ The new configuration is adapted immediately. Patch updates will be applied automatically.
+ [eliza@dolittle ~]$
 
 .. include:: includes/my-print-defaults.rst
 
@@ -64,15 +67,15 @@ Create a ``ghost`` directory in your home, ``cd`` to it and then run the install
 
   * ``--no-stack``: Disables the system stack check during setup. Since we're a shared hosting provider, the stack is maintained by us.
   * ``--no-setup-linux-user``: Skips creating a linux user. You can't do that without root privileges.
-  * ``--no-setup-systemd``: Skips creation of a systemd unit file. We'll use supervisord_ later instead.
-  * ``--no-setup-nginx``: Skips webserver configuration. We'll use a htaccess_ file for apache_ later instead.
-  * ``--no-setup-mysql``: Skips setup of MySQL_. You can't do that without root privileges.
+  * ``--no-setup-systemd``: Skips creation of a systemd unit file. We'll use :manual:`supervisord <daemons-supervisord>` later instead.
+  * ``--no-setup-nginx``: Skips webserver configuration. We'll use a :manual_anchor:`htaccess <web-documentroot.html#own-configuration>` file for :manual_anchor:`apache <lang-nodejs.html#connection-to-webserver>` later instead.
+  * ``--no-setup-mysql``: Skips setup of :manual:`MySQL <database-mysql>`. You can't do that without root privileges.
 
 You will need to enter the following information:
 
   * your blog URL: The URL for your blog. Since we don't allow HTTP, use HTTPS. For example: https://isabell.uber.space
-  * your MySQL hostname, username and password: the hostname is ``localhost`` and you should know your MySQL credentials_ by now. If you don't, start reading again at the top.
-  * your Ghost database name: we suggest you use a additional_ database. For example: isabell_ghost
+  * your MySQL hostname, username and password: the hostname is ``localhost`` and you should know your MySQL :manual_anchor:`credentials <database-mysql.html#login-credentials>` by now. If you don't, start reading again at the top.
+  * your Ghost database name: we suggest you use a :manual_anchor:`additional <database-mysql.html#additional-databases>` database. For example: isabell_ghost
   * Do you want to start Ghost?: Answer No.
 
 .. code-block:: console
@@ -108,29 +111,35 @@ You will need to enter the following information:
 Configuration
 =============
 
-Change network interface
+Configure web backend
+--------------
+
+Since Uberspace 7.2 you can use :manual:`web backends <web-backends>` which makes it very easy to get Ghost listen and running. Follow the steps of that article to set up your desired web backend for Ghost. Probably one of the easiest commands for this would be:
+
+::
+
+ uberspace web backend set / --http --port 2369
+
+Change the configuration
 ------------------------
 
-Edit ``~/ghost/config.production.json`` and change the host IP address to ``0.0.0.0``:
+You need to adjust your ``~/ghost/config.production.json`` with the right interface. Find the following code block and change host 127.0.0.1 to 0.0.0.0:
 
-.. code-block:: none
- :emphasize-lines: 5
+::
 
- {
-   "url": "https://isabell.uber.space",
-   "server": {
-     "port": 2368,
-     "host": "0.0.0.0"
-   },
+ "server": {
+   "port": 2369,
+   "host": "127.0.0.1"
+ },
 
-Configure web server
---------------------
+Should be:
 
-.. note::
+::
 
-    Ghost is running on port 2368.
-
-.. include:: includes/web-backend.rst
+ "server": {
+   "port": 2369,
+   "host": "0.0.0.0"
+ },
 
 Setup daemon
 ------------
@@ -223,21 +232,62 @@ Again, replace the version number with the newest version.
 
 If it's not in state RUNNING, check your configuration.
 
+Update via script
+-----------------
+
+As an alternative to this manual process of updating Ghost to a new version you can also use the following script:
+
+.. code-block:: console
+ :emphasize-lines: 4
+ 
+ #!/bin/bash
+ #set -v
+ # created by peleke.de
+ GHOSTDIR=~/ghost
+ PACKAGE_VERSION_OLD=$(sed -nE 's/^\s*"version": "(.*?)",$/\1/p' $GHOSTDIR/current/package.json)
+ CURRENT_GHOST=$(curl -s https://api.github.com/repos/TryGhost/Ghost/releases | grep tag_name | head -n 1 | cut -d '"' -f 4)
+ CURRENT_GHOST_DOWNLOAD=$(curl -s https://api.github.com/repos/TryGhost/Ghost/releases/latest | grep browser_download_url | cut -d '"' -f 4)
+ CURRENT_GHOST_FILE=$(echo $CURRENT_GHOST_DOWNLOAD | sed 's:.*/::')
+ echo "Installierte Version von Ghost: $PACKAGE_VERSION_OLD"
+ echo " Verfuegbare Version von Ghost: $CURRENT_GHOST"
+ cd $GHOSTDIR
+ if [[ $CURRENT_GHOST != $PACKAGE_VERSION_OLD ]]
+ then
+ 	read -r -p "Soll Ghost jetzt von Version $PACKAGE_VERSION_OLD auf $CURRENT_GHOST aktualisiert werden? [J/n] " response
+ 	if [[ $response =~ ^([jJ][aA]|[jJ]|"")$ ]]
+ 	then
+ 		echo "Ghost $CURRENT_GHOST wird heruntergeladen und entpackt..."
+ 		cd $GHOSTDIR/versions/
+ 		curl -LOk $CURRENT_GHOST_DOWNLOAD
+ 		unzip $GHOSTDIR/versions/$CURRENT_GHOST_FILE -d $CURRENT_GHOST
+ 		rm $GHOSTDIR/versions/$CURRENT_GHOST_FILE
+ 		echo "Ghost wird jetzt aktualisiert..."
+ 		cd $GHOSTDIR/versions/$CURRENT_GHOST
+ 		npm install --production
+ 		echo "Die Datenbank von Ghost wird auf die neue Version migriert..."
+ 		cd $GHOSTDIR
+ 		NODE_ENV=production knex-migrator migrate --init --mgpath $GHOSTDIR/versions/$CURRENT_GHOST
+ 		ln -sfn $GHOSTDIR/versions/$CURRENT_GHOST $GHOSTDIR/current
+ 		PACKAGE_VERSION=$(sed -nE 's/^\s*"version": "(.*?)",$/\1/p' $GHOSTDIR/current/package.json)
+ 		echo "Ghost wurde von Version $PACKAGE_VERSION_OLD auf Version $PACKAGE_VERSION aktualisiert und wird neu gestartet. Dies kann ein paar Sekunden dauern..."
+ 		supervisorctl restart ghost
+ 		supervisorctl status
+ 		echo "Bei Fehlern Logfile ueberpruefen: 'supervisorctl tail ghost'"
+ 		echo "Zum Zuruecksetzen auf Ghost $PACKAGE_VERSION_OLD folgenden Befehl ausfuehren: 'ln -sfn $GHOSTDIR/versions/$PACKAGE_VERSION_OLD $GHOSTDIR/current' und dann per 'supervisorctl restart ghost' neustarten"
+ 	else
+ 		echo "-> Ghost wird nicht aktualisiert"
+ 	fi
+ else
+ 	echo "-> Ghost ist bereits auf dem aktuellen Stand, keine Aktualisierung notwendig"
+ fi 
+
+
 .. _Ghost: https://ghost.org
-.. _Node.js: https://manual.uberspace.de/en/lang-nodejs.html
-.. _npm: https://manual.uberspace.de/en/lang-nodejs.html#npm
-.. _credentials: https://manual.uberspace.de/en/database-mysql.html#login-credentials
-.. _MySQL: https://manual.uberspace.de/en/database-mysql.html
-.. _settings: https://docs.ghost.org/v1/docs/cli-install
-.. _supervisord: https://manual.uberspace.de/en/daemons-supervisord.html
-.. _htaccess: https://manual.uberspace.de/en/web-documentroot.html#own-configuration
-.. _apache: https://manual.uberspace.de/en/lang-nodejs.html#connection-to-webserver
-.. _domains: https://manual.uberspace.de/en/web-domains.html
-.. _additional: https://manual.uberspace.de/en/database-mysql.html#additional-databases
+.. _settings: https://docs.ghost.org/api/ghost-cli/
 .. _feed: https://github.com/TryGhost/Ghost/releases.atom
 
 ----
 
-Tested with Ghost 2.0.0, Uberspace 7.1.11
+Tested with Ghost 2.15.0, Uberspace 7.2.4
 
 .. authors::
